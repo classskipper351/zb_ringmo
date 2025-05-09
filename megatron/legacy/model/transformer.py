@@ -966,7 +966,7 @@ class ParallelAttention(MegatronModule):
 
         return output, bias
 
-
+@torch.jit.ignore
 def bias_dropout_add(x, bias, residual, prob, training):
     # type: (Tensor, Optional[Tensor], Tensor, float, bool) -> Tensor
     if bias is not None:

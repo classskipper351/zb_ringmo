@@ -1201,6 +1201,12 @@ def get_tensor_shapes(
             tensor_shapes.append((decoder_seq_length, micro_batch_size, config.hidden_size))
     else:  # model_type == ModelType.encoder_or_decoder
         tensor_shapes.append((seq_length, micro_batch_size, config.hidden_size))
+    if config.variable_seq_lengths:
+        rank = parallel_state.get_pipeline_model_parallel_rank()
+        if parallel_state.get_pipeline_model_parallel_world_size() == 2:
+            tensor_shapes=[(4,144,512)]
+        elif parallel_state.get_pipeline_model_parallel_world_size() == 4:
+            tensor_shapes=[(4,2304//(4**rank),128*(2**rank))]
     return tensor_shapes
 
 

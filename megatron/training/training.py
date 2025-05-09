@@ -153,7 +153,7 @@ def get_start_time_from_progress_log():
     return datetime.strptime(start_time, '%Y-%m-%d %H:%M:%S'), \
         start_num_floating_point_operations
 
-
+'''
 def setup_gpu_affinity():
     if "RANK" not in os.environ:
         raise RuntimeError("env var RANK is not set. Probably not run by torchrun.")
@@ -169,7 +169,25 @@ def setup_gpu_affinity():
 
     cpus = sorted(list(affinity))
     print(f"rank {rank} gpu {gpu_id} Setting affinity to {cpus}")
+'''
 
+def setup_gpu_affinity():
+    if "RANK" not in os.environ:
+        raise RuntimeError("env var RANK is not set. Probably not run by torchrun.")
+    rank = int(os.environ["RANK"])
+    local_rank = rank % torch.cuda.device_count()
+    gpu_id = local_rank  # 直接使用 local_rank 作为逻辑 gpu_id
+
+    nproc_per_node = torch.cuda.device_count()
+    affinity = gpu_affinity.set_affinity(gpu_id, nproc_per_node)
+
+    # 可选：记录物理GPU索引以便调试
+    physical_gpu_id = local_rank
+    if os.environ.get('CUDA_VISIBLE_DEVICES') is not None:
+        physical_gpu_id = int(os.environ.get('CUDA_VISIBLE_DEVICES').split(',')[local_rank])
+
+    cpus = sorted(list(affinity))
+    print(f"rank {rank} gpu {physical_gpu_id} (logical gpu {gpu_id}) Setting affinity to {cpus}")
 
 def pretrain(
     train_valid_test_dataset_provider,
@@ -211,6 +229,7 @@ def pretrain(
             to set already parse arguments.
     """
 
+
     # Run this as early as possible
     setup_gpu_affinity()
 
@@ -227,6 +246,18 @@ def pretrain(
 
     if args.log_progress:
         append_to_progress_log("Starting job")
+    
+    if(args.open_debug):
+        if 1:
+            port_base = 36287 #for swin debug
+        import debugpy
+            # 启用调试器
+        import torch.distributed as dist
+        if dist.get_rank() in[0,1,2,3]:
+            debugpy.listen(("localhost", port_base + dist.get_rank())) 
+            print("waiting for Debugger to attach") # 每个进程使用不同的端口
+            debugpy.wait_for_client()  # 等待调试器附加
+            print(f"Rank {dist.get_rank()}: Debugger attached")
 
     # Set pytorch JIT layer fusion options and warmup JIT functions.
     set_jit_fusion_options()
@@ -1654,7 +1685,7 @@ def build_train_valid_test_data_iterators(
             return iter(cyclic_iter(dataloader))
         elif dataloader_type == "external":
             # External dataloader is passed through. User is expected to define how to iterate.
-            return dataloader
+            return iter(cyclic_iter(dataloader)) 
         else:
             raise RuntimeError("unexpected dataloader type")
 

@@ -417,7 +417,10 @@ class TrainingIteration:
         cnt = (int(offload_time) + 1) * 3
         multi_chunks = get_virtual_pipeline_number() > 1
         conf = self.iteration_config
-        from pretrain_gpt import DataLoaderStore
+        if get_args().vision_pretraining_type == 'dino':
+            from swin_pretrain_pp import SwinDataLoaderStore as DataLoaderStore
+        else:
+            from pretrain_gpt import DataLoaderStore
         count = len(DataLoaderStore.cache)
         for i in range(cnt):
             if idx + 1 + i >= len(conf.schedules):
@@ -441,7 +444,10 @@ class TrainingIteration:
     def load_all_batch(self):
         conf = self.iteration_config
         multi_chunks = get_virtual_pipeline_number() > 1
-        from pretrain_gpt import DataLoaderStore
+        if get_args().vision_pretraining_type == 'dino':
+            from swin_pretrain_pp import SwinDataLoaderStore as DataLoaderStore
+        else:
+            from pretrain_gpt import DataLoaderStore
         assert len(DataLoaderStore.cache) == 0
         for scheduled_node in conf.schedules:
             if scheduled_node.type != F:
@@ -482,7 +488,11 @@ class TrainingIteration:
             mem_before = torch.cuda.memory_allocated()
 
         parallel_state.set_seq_split_idx(scheduled_node.seq_split_idx)
-        from pretrain_gpt import DataLoaderStore
+        if get_args().vision_pretraining_type == 'dino':
+            from swin_pretrain_pp import SwinDataLoaderStore as DataLoaderStore
+        else:
+            from pretrain_gpt import DataLoaderStore
+        
         if len(DataLoaderStore.cache) == 0:
             DataLoaderStore.push(conf.data_iterator[scheduled_node.chunk])
         output_tensor, num_tokens = forward_step(
@@ -570,9 +580,14 @@ class TrainingIteration:
         def resume_input_tensor(input_tensor):
             for t in input_tensor:
                 if t is not None and hasattr(t, 'original_shape'):
+                    
                     assert t.data.numel() == 1
                     t.data = torch.empty(t.original_shape, device=t.device, dtype=t.dtype)
+                   
         resume_input_tensor(input_tensor)
+        if parallel_state.get_pipeline_model_parallel_rank()==2:
+            import pdb;pdb.set_trace() 
+        
         input_tensor_grad = backward_step(
             input_tensor,
             output_tensor,
@@ -918,7 +933,6 @@ class SchedNodeRuntime:
 
         model_type = get_model_type(model[0])
         encoder_decoder_xattn = get_model_xattn(model[0])
-
         tensor_shape = [seq_length, micro_batch_size, config.hidden_size]
         if config.sequence_parallel:
             tensor_shape[0] = (
@@ -932,6 +946,19 @@ class SchedNodeRuntime:
             )
 
         rank = parallel_state.get_pipeline_model_parallel_rank()
+        if config.variable_seq_lengths:
+            tensor_shape =get_tensor_shapes(
+                rank=rank - 1,
+                model_type=model_type,
+                seq_length=seq_length,
+                micro_batch_size=micro_batch_size,
+                decoder_seq_length=decoder_seq_length,
+                config=config,
+                encoder_decoder_xattn=encoder_decoder_xattn,
+            )
+            tensor_shape = tensor_shape[0]
+        
+        
         recv_tensor_shapes = get_tensor_shapes(
             rank=rank - 1,
             model_type=model_type,
@@ -941,7 +968,7 @@ class SchedNodeRuntime:
             config=config,
             encoder_decoder_xattn=encoder_decoder_xattn,
         )
-        assert recv_tensor_shapes[0] == tensor_shape
+        assert recv_tensor_shapes[0] == tensor_shape 
         send_tensor_shapes = get_tensor_shapes(
             rank=rank,
             model_type=model_type,
@@ -1199,6 +1226,11 @@ def bootstrap_and_profile_p2p_communication(config, send_tensor_shapes, recv_ten
         ScheduleTimers.iter_counter == 1
         and parallel_state.get_pipeline_model_parallel_world_size() > 1
     ):
+        
+        flag = False
+        if config.variable_seq_lengths == True :
+            config.variable_seq_lengths  = False
+            flag = True
         nccl_init_tensor = [torch.Tensor([0]).cuda()]
         shape = [(1,)]
         if get_args().zero_bubble_v_schedule or get_args().enable_1f1b_v:
@@ -1246,6 +1278,9 @@ def bootstrap_and_profile_p2p_communication(config, send_tensor_shapes, recv_ten
                 tensor_shape=shape[0],
                 config=config,
             )
+            
+        if flag:
+            config.variable_seq_lengths = True
 
         # Benchmarking the communication cost
         send_data = [
@@ -1576,10 +1611,11 @@ def get_zero_bubble_forward_backward_func():
             f = [x[0] for x in f]
             b = [x[0] for x in b]
             w = [x[0] for x in w]
+            if get_args().uniformed_compute_time:
             # Using uniform f/b/w timing for now.
-            f = [sorted(f)[len(f) // 2]] * len(f)
-            b = [sorted(b)[len(b) // 2]] * len(b)
-            w = [sorted(w)[len(w) // 2]] * len(w)
+                f = [sorted(f)[len(f) // 2]] * len(f)
+                b = [sorted(b)[len(b) // 2]] * len(b)
+                w = [sorted(w)[len(w) // 2]] * len(w)
             f_mem = [x[0] for x in f_mem]
             b_mem = [x[0] for x in b_mem]
             w_mem = [x[0] for x in w_mem]

@@ -496,4 +496,5 @@ if __name__ == "__main__":
     parser.add_argument('-m', '--plot_microbatch', action='store_true', help='Plot microbatch index.')
     parser.add_argument('-a', '--plot_all', action='store_true', help='Plot all fields.')
     args = parser.parse_args()
+    #import pdb;pdb.set_trace()
     render_svg_graph(args)

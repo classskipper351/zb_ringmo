@@ -241,7 +241,10 @@ def forward_step(data_iterator, model: GPTModel):
     with stimer:
         output_tensor = model(tokens, position_ids, attention_mask,
                               labels=labels)
-
+    
+    delay = 0.0 if mpu.get_pipeline_model_parallel_rank()==2 else 0.0
+    import time
+    time.sleep(delay)
     return output_tensor, partial(loss_func, loss_mask)
 
 
@@ -309,7 +312,7 @@ if __name__ == "__main__":
 
     # Temporary for transition to core datasets
     train_valid_test_datasets_provider.is_distributed = True
-
+    torch.init_dtb_manager()
     pretrain(
         train_valid_test_datasets_provider,
         model_provider,

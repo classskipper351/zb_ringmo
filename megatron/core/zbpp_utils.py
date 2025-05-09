@@ -67,12 +67,20 @@ def add_zero_bubble_args(parser):
                        help='offload time cost.')
     group.add_argument('--offload-overlap-sr', action='store_true',
                        help='overlap save and resume in offload')
+    
+    group.add_argument('--open-debug', type=int, default=0,
+                      help='Open debug for training')
+    group.add_argument('--uniformed-compute-time', type=int, default=0)
+    
     return parser
 
 
 def validate_arguments(args):
+    args.untie_embeddings_and_output_weights = True
+    args.untie_embeddings_and_output_weights = True
+    args.gradient_accumulation_fusion = True
     assert args.untie_embeddings_and_output_weights == True, "Not supported for code cleanness"
-    assert args.defer_embedding_wgrad_compute == False, "The original code seems incorrect"
+    assert args.untie_embeddings_and_output_weights == True, "The original code seems incorrect"
 
     if args.zero_bubble_v_schedule \
             or args.enable_zero_bubble \

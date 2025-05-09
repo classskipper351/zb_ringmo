@@ -65,6 +65,7 @@ class Device:
 
     def __init__(self, device_idx):
         if 'CUDA_VISIBLE_DEVICES' in os.environ:
+            print(os.environ['CUDA_VISIBLE_DEVICES'])
             visible_devices = os.environ['CUDA_VISIBLE_DEVICES'].split(',')
             if device_idx >= len(visible_devices):
                 msg = (
